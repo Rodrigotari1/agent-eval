@@ -104,7 +104,8 @@ async function main() {
 
     const results = await runTests({
       reporter,
-      nameFilter: options.nameFilter
+      nameFilter: options.nameFilter,
+      timeoutMs: options.timeout
     });
 
     if (results.some(r => !r.passed)) {

@@ -4,6 +4,7 @@ import { AssertionImpl } from './assertions';
 import { Reporter } from './reporter';
 
 let currentRunner: AgentRunner | null = null;
+let currentTimeoutMs: number | undefined;
 const testCaseList: TestCase[] = [];
 const beforeEachHookList: (() => Promise<void> | void)[] = [];
 const afterEachHookList: (() => Promise<void> | void)[] = [];
@@ -22,7 +23,7 @@ export function afterEach(fn: () => Promise<void> | void): void {
 
 export async function runAgent(agent: AgentFunction, prompt: string): Promise<void> {
   currentRunner = new AgentRunner(agent);
-  await currentRunner.run(prompt);
+  await currentRunner.run(prompt, currentTimeoutMs);
 }
 
 export function expect(): AssertionImpl {
@@ -39,6 +40,7 @@ export function expect(): AssertionImpl {
 export interface RunTestsOptions {
   reporter?: Reporter;
   nameFilter?: string;
+  timeoutMs?: number;
 }
 
 function filterTestsByName(nameFilter: string | undefined): TestCase[] {
@@ -94,6 +96,7 @@ export async function runTests(options?: Reporter | RunTestsOptions): Promise<Te
   } else if (options) {
     reporter = options.reporter;
     nameFilter = options.nameFilter;
+    currentTimeoutMs = options.timeoutMs;
   }
 
   const filteredTests = filterTestsByName(nameFilter);
