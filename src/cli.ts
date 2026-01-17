@@ -5,6 +5,7 @@ import { resolve, relative } from 'path';
 import { DefaultReporter, VerboseReporter, MinimalReporter, JSONReporter, Reporter } from './reporter';
 import { clearTests, runTests } from './index';
 import { loadConfig, mergeConfig } from './config';
+import { TestWatcher } from './watch';
 
 interface CLIOptions {
   pattern: string;
@@ -12,6 +13,7 @@ interface CLIOptions {
   nameFilter?: string;
   bail: boolean;
   timeout: number;
+  watch: boolean;
 }
 
 function parseArgs(): CLIOptions {
@@ -20,7 +22,8 @@ function parseArgs(): CLIOptions {
     pattern: '**/*.test.{ts,js}',
     reporter: 'default',
     bail: false,
-    timeout: 30000
+    timeout: 30000,
+    watch: false
   };
 
   for (let i = 0; i < args.length; i++) {
@@ -42,6 +45,10 @@ function parseArgs(): CLIOptions {
       case '--timeout':
       case '-t':
         options.timeout = parseInt(args[++i], 10);
+        break;
+      case '--watch':
+      case '-w':
+        options.watch = true;
         break;
       default:
         if (!arg.startsWith('-')) {
@@ -78,37 +85,24 @@ async function loadTestFile(filePath: string): Promise<void> {
   }
 }
 
-async function main() {
-  const fileConfig = loadConfig();
-  const cliArgs = parseArgs();
-  const options = mergeConfig(fileConfig, cliArgs);
-
-  const reporter = createReporter(options.reporter || 'default');
-
-  const files = await glob(options.pattern || '**/*.test.{ts,js}', {
-    ignore: ['node_modules/**', 'dist/**', 'build/**'],
-    absolute: false
-  });
-
-  if (files.length === 0) {
-    console.error(`No test files found matching pattern: ${options.pattern}`);
-    process.exit(1);
-  }
-
+async function executeTestFiles(
+  filePathList: string[],
+  reporter: Reporter,
+  options: CLIOptions
+): Promise<boolean> {
   let allPassed = true;
 
-  for (const file of files) {
+  for (const filePath of filePathList) {
     clearTests();
+    await loadTestFile(filePath);
 
-    await loadTestFile(file);
-
-    const results = await runTests({
+    const testResultList = await runTests({
       reporter,
       nameFilter: options.nameFilter,
       timeoutMs: options.timeout
     });
 
-    if (results.some(r => !r.passed)) {
+    if (testResultList.some(r => !r.passed)) {
       allPassed = false;
       if (options.bail) {
         break;
@@ -116,6 +110,48 @@ async function main() {
     }
   }
 
+  return allPassed;
+}
+
+async function main() {
+  const fileConfig = loadConfig();
+  const cliArgs = parseArgs();
+  const mergedConfig = mergeConfig(fileConfig, cliArgs);
+
+  const options: CLIOptions = {
+    pattern: mergedConfig.pattern || '**/*.test.{ts,js}',
+    reporter: mergedConfig.reporter || 'default',
+    nameFilter: mergedConfig.nameFilter,
+    bail: mergedConfig.bail || false,
+    timeout: mergedConfig.timeout || 30000,
+    watch: mergedConfig.watch || false
+  };
+
+  const reporter = createReporter(options.reporter);
+
+  if (options.watch) {
+    const watcher = new TestWatcher({
+      pattern: options.pattern,
+      reporter,
+      nameFilter: options.nameFilter,
+      timeoutMs: options.timeout
+    });
+
+    await watcher.start();
+    return;
+  }
+
+  const filePathList = await glob(options.pattern, {
+    ignore: ['node_modules/**', 'dist/**', 'build/**'],
+    absolute: false
+  });
+
+  if (filePathList.length === 0) {
+    console.error(`No test files found matching pattern: ${options.pattern}`);
+    process.exit(1);
+  }
+
+  const allPassed = await executeTestFiles(filePathList, reporter, options);
   process.exit(allPassed ? 0 : 1);
 }
 

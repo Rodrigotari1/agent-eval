@@ -7,6 +7,7 @@ export interface Config {
   timeout?: number;
   bail?: boolean;
   nameFilter?: string;
+  watch?: boolean;
 }
 
 export function loadConfig(): Config {
