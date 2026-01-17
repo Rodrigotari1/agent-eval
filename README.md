@@ -1,33 +1,24 @@
 # agent-eval
 
-Testing framework for AI agents with a Jest-like API.
-
-## Installation
+Test AI agents before production. Catch tool misuse, policy violations, and safety issues.
 
 ```bash
 npm install agent-eval
 ```
 
-## Quick Start
+## What It Does
+
+Your AI agent might say the right things but do the wrong things. agent-eval tests what agents **do**, not just what they say.
 
 ```javascript
 const { test, runAgent, expect } = require('agent-eval');
 
-const myAgent = async (prompt) => {
-  return {
-    output: `Response to: ${prompt}`,
-    toolCalls: [{ name: 'searchWeb', args: { query: prompt } }]
-  };
-};
+test('refund requests escalate to humans', async () => {
+  await runAgent(customerServiceAgent, 'I want a refund');
 
-test('agent uses search tool', async () => {
-  await runAgent(myAgent, 'What is the weather?');
-  expect().toCallTool('searchWeb');
-});
-
-test('agent responds with text', async () => {
-  await runAgent(myAgent, 'Hello');
-  expect().toMention('Response');
+  expect().toCallTool('lookup_order');
+  expect().not.toCallTool('process_refund');  // Don't auto-refund
+  expect().toCallTool('escalate_to_human');
 });
 ```
 
@@ -37,206 +28,111 @@ Run tests:
 npx agent-eval
 ```
 
-## API
+## Why You Need This
 
-### Test Definition
+**Problem:** AI agents are non-deterministic. Manual testing doesn't scale.
+
+**Solution:** Write tests that validate behavior, not outputs.
 
 ```javascript
-test('test name', async () => {
-  // test code
+// Bad: Testing text output (fragile, unreliable)
+expect(output).toContain('I will escalate this');
+
+// Good: Testing actual behavior
+expect().toCallTool('escalate_to_human');
+```
+
+## Real Examples
+
+### Customer Service Agent
+
+```javascript
+test('handles angry customer professionally', async () => {
+  await runAgent(agent, 'This is BULLSHIT! Refund NOW!');
+
+  expect().toMention('understand your frustration');
+  expect().not.toMention('bullshit');  // Don't echo profanity
+  expect().toCallTool('escalate_to_manager');
+});
+
+test('validates order before refund', async () => {
+  await runAgent(agent, 'Refund order #999999');
+
+  expect().toCallTool('lookup_order');
+  expect().not.toCallTool('process_refund');  // Order doesn't exist
+  expect().toMention('cannot find order');
 });
 ```
 
-### Running Agents
+### Research Agent
 
 ```javascript
-await runAgent(agentFunction, prompt);
+test('cites sources for claims', async () => {
+  await runAgent(agent, 'What caused the 2008 crisis?');
+
+  expect().toCallTool('search_academic_papers');
+  expect().toCallToolTimes('search', { min: 2 });  // Multiple sources
+  expect().toMention('according to');
+});
 ```
 
-Agent function signature:
-
-```typescript
-type AgentFunction = (prompt: string) => Promise<{
-  output: string;
-  toolCalls: Array<{ name: string; args?: Record<string, unknown> }>;
-  tokens?: { prompt: number; completion: number; total: number };
-  durationMs?: number;
-}>;
-```
-
-### Assertions
+### Code Generation Agent
 
 ```javascript
-expect().toCallTool('toolName')
-expect().toCallToolWith('toolName', { arg: 'value' })
-expect().toCallToolTimes('toolName', { exactly: 2 })
-expect().toCallToolTimes('toolName', { min: 1, max: 3 })
+test('runs tests before committing', async () => {
+  await runAgent(agent, 'Add login validation');
+
+  expect().toCallTool('run_tests');
+  expect().not.toCallTool('git_commit');  // Don't commit if tests fail
+});
+```
+
+## Assertions
+
+```javascript
+// Tool usage
+expect().toCallTool('tool_name')
+expect().toCallToolWith('tool_name', { arg: 'value' })
+expect().toCallToolTimes('tool_name', { exactly: 2 })
+
+// Output validation
 expect().toMention('text in output')
+expect().not.toMention('sensitive data')
+
+// Performance
 expect().toRespondIn({ ms: 1000 })
-expect().toSatisfy(result => result.output.length > 10)
 
-expect().not.toCallTool('toolName')
-expect().not.toMention('text')
+// Custom checks
+expect().toSatisfy(result => result.toolCalls.length > 0)
+
+// Negation (safety checks)
+expect().not.toCallTool('dangerous_action')
 ```
 
-### Hooks
+## Setup Your Agent
+
+Your agent function returns this shape:
 
 ```javascript
-beforeEach(async () => {
-  // runs before each test
-});
+const myAgent = async (prompt) => {
+  // Your agent logic here
 
-afterEach(async () => {
-  // runs after each test
-});
-```
-
-## CLI Usage
-
-```bash
-agent-eval [pattern] [options]
-```
-
-Options:
-
-- `--reporter, -r <type>` - Reporter type: default, verbose, minimal, json
-- `--grep, -g <pattern>` - Run only tests matching pattern
-- `--bail, -b` - Stop on first failure
-- `--timeout, -t <ms>` - Timeout per test
-
-Examples:
-
-```bash
-agent-eval "tests/**/*.test.js"
-agent-eval --reporter verbose
-agent-eval --grep "search"
-agent-eval --bail
-```
-
-## Configuration
-
-Create `.agent-eval.json`:
-
-```json
-{
-  "pattern": "tests/**/*.test.js",
-  "reporter": "default",
-  "timeout": 30000,
-  "bail": false
-}
-```
-
-Or in `package.json`:
-
-```json
-{
-  "agent-eval": {
-    "pattern": "tests/**/*.test.js",
-    "reporter": "verbose"
-  }
-}
-```
-
-Or `agent-eval.config.js`:
-
-```javascript
-module.exports = {
-  pattern: 'tests/**/*.test.js',
-  reporter: 'default'
+  return {
+    output: 'Agent response text',
+    toolCalls: [
+      { name: 'search', args: { query: 'AI' } },
+      { name: 'summarize', args: {} }
+    ],
+    tokens: { prompt: 100, completion: 50, total: 150 },  // optional
+    durationMs: 250  // optional
+  };
 };
 ```
 
-## Reporters
-
-### Default
-
-```
-Running 3 tests...
-
-  ✓ test 1 (5ms)
-  ✓ test 2 (3ms)
-  ✗ test 3 (2ms)
-    Error: Expected agent to call tool "search"
-
-Tests: 2 passed, 1 failed, 3 total
-Time:  10ms
-```
-
-### Verbose
-
-Shows full error stacks and token usage.
-
-### Minimal
-
-```
-..F
-
-2/3 passed
-
-Failures:
-  - test 3
-    Expected agent to call tool "search"
-```
-
-### JSON
-
-Machine-readable output for CI integration.
-
-## Advanced Example
+## LangChain Support
 
 ```javascript
-const { test, runAgent, expect, beforeEach, afterEach } = require('agent-eval');
-
-let callCount = 0;
-
-beforeEach(() => {
-  callCount = 0;
-});
-
-afterEach(() => {
-  console.log(`Test made ${callCount} calls`);
-});
-
-test('agent makes multiple searches', async () => {
-  const agent = async (prompt) => {
-    callCount++;
-    return {
-      output: `Found results for ${prompt}`,
-      toolCalls: [
-        { name: 'search', args: { query: prompt } },
-        { name: 'search', args: { query: 'related' } }
-      ],
-      tokens: { prompt: 100, completion: 50, total: 150 },
-      durationMs: 250
-    };
-  };
-
-  await runAgent(agent, 'AI research');
-
-  expect().toCallToolTimes('search', { exactly: 2 });
-  expect().toCallToolWith('search', { query: 'AI research' });
-  expect().toMention('Found results');
-  expect().toRespondIn({ ms: 500 });
-});
-
-test('custom validation', async () => {
-  await runAgent(myAgent, 'test');
-
-  expect().toSatisfy(
-    result => result.toolCalls.length > 0,
-    'Agent must call at least one tool'
-  );
-});
-```
-
-## Adapters
-
-### LangChain
-
-Wrap LangChain agents to use with agent-eval:
-
-```javascript
-const { wrapLangChainAgent, test, runAgent, expect } = require('agent-eval');
+const { wrapLangChainAgent } = require('agent-eval');
 const { AgentExecutor } = require('langchain/agents');
 
 const executor = AgentExecutor.fromAgentAndTools({
@@ -246,18 +142,72 @@ const executor = AgentExecutor.fromAgentAndTools({
 
 const wrappedAgent = wrapLangChainAgent(executor);
 
-test('langchain agent uses tools', async () => {
-  await runAgent(wrappedAgent, 'What is the weather?');
-
-  expect().toCallTool('weather');
-  expect().toMention('temperature');
+test('langchain agent', async () => {
+  await runAgent(wrappedAgent, 'Search for AI news');
+  expect().toCallTool('search');
 });
 ```
 
-Features:
-- Automatically extracts tool calls from `intermediateSteps`
-- Maps token usage from `llmOutput`
-- Supports both `invoke()` and `call()` methods
+## Hooks
+
+```javascript
+let testContext;
+
+beforeEach(() => {
+  testContext = { userId: '123' };
+});
+
+afterEach(() => {
+  console.log('Test complete');
+});
+
+test('uses context', async () => {
+  await runAgent(agent, `Get orders for ${testContext.userId}`);
+  expect().toCallTool('lookup_orders');
+});
+```
+
+## Commands
+
+```bash
+agent-eval                        # run all tests
+agent-eval --watch                # watch mode
+agent-eval --grep "refund"        # filter tests
+agent-eval --timeout 10000        # set timeout
+agent-eval --reporter verbose     # detailed output
+agent-eval --bail                 # stop on first failure
+```
+
+## Config
+
+`.agent-eval.json`:
+
+```json
+{
+  "pattern": "tests/**/*.test.js",
+  "reporter": "default",
+  "timeout": 30000
+}
+```
+
+## CI/CD
+
+Exit code 0 = passed, 1 = failed. Use it in CI:
+
+```yaml
+- run: npm test
+  env:
+    NODE_ENV: test
+```
+
+## Who Uses This
+
+Teams building:
+- Customer service bots
+- Code generation agents
+- Research/analysis agents
+- Booking/scheduling systems
+- Anything that calls APIs or takes actions
 
 ## License
 
