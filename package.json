@@ -1,0 +1,24 @@
+{
+  "name": "agent-eval",
+  "version": "0.1.0",
+  "description": "Jest-like testing framework for AI agents",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "bin": {
+    "agent-eval": "./dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "test": "node dist/cli.js"
+  },
+  "keywords": ["ai", "agent", "testing", "test-framework"],
+  "author": "",
+  "license": "MIT",
+  "dependencies": {
+    "glob": "^10.3.10"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "typescript": "^5.0.0"
+  }
+}
